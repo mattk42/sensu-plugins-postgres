@@ -70,7 +70,7 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
   def run
     timestamp = Time.now.to_i
 
-    con     = PG::Connection.new(config[:hostname], config[:port], nil, nil, 'postgres', config[:user], config[:password])
+    con     = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db] , config[:user], config[:password])
     request = [
       'select xact_commit, xact_rollback,',
       'blks_read, blks_hit,',
