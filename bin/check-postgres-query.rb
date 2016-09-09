@@ -35,6 +35,11 @@ require 'dentaku'
 
 # Check PostgresSQL Query
 class CheckPostgresQuery < Sensu::Plugin::Check::CLI
+  option :connection_string,
+         description: 'A postgres connection string to use, overrides any other parameters',
+         short: '-c CONNECTION_STRING',
+         long:  '--connection CONNECTION_STRING'
+
   option :user,
          description: 'Postgres User',
          short: '-u USER',
@@ -90,7 +95,13 @@ class CheckPostgresQuery < Sensu::Plugin::Check::CLI
 
   def run
     begin
-      con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+
+      if config[:connection_string]
+        con = PG::Connection.new(config[:connection_string])
+      else
+        con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+      end
+
       res = con.exec(config[:query].to_s)
     rescue PG::Error => e
       unknown "Unable to query PostgreSQL: #{e.message}"

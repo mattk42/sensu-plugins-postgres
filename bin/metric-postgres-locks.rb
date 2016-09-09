@@ -33,6 +33,11 @@ require 'pg'
 require 'socket'
 
 class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
+  option :connection_string,
+         description: 'A postgres connection string to use, overrides any other parameters',
+         short: '-c CONNECTION_STRING',
+         long:  '--connection CONNECTION_STRING'
+
   option :user,
          description: 'Postgres User',
          short: '-u USER',
@@ -71,7 +76,12 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
 
     locks_per_type = Hash.new(0)
 
-    con     = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+    if config[:connection_string]
+      con = PG::Connection.new(config[:connection_string])
+    else
+      con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+    end
+
     request = [
       'SELECT mode, count(mode) FROM pg_locks',
       "where database = (select oid from pg_database where datname = '#{config[:db]}')",

@@ -34,6 +34,11 @@ require 'pg'
 require 'socket'
 
 class PostgresStatsTableMetrics < Sensu::Plugin::Metric::CLI::Graphite
+  option :connection_string,
+         description: 'A postgres connection string to use, overrides any other parameters',
+         short: '-c CONNECTION_STRING',
+         long:  '--connection CONNECTION_STRING'
+
   option :user,
          description: 'Postgres User',
          short: '-u USER',
@@ -76,7 +81,12 @@ class PostgresStatsTableMetrics < Sensu::Plugin::Metric::CLI::Graphite
   def run
     timestamp = Time.now.to_i
 
-    con     = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+    if config[:connection_string]
+      con = PG::Connection.new(config[:connection_string])
+    else
+      con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+    end
+
     request = [
       'select sum(seq_scan) as seq_scan, sum(seq_tup_read) as seq_tup_read,',
       'sum(idx_scan) as idx_scan, sum(idx_tup_fetch) as idx_tup_fetch,',

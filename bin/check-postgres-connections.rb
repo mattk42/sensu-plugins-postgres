@@ -36,6 +36,11 @@ require 'sensu-plugin/check/cli'
 require 'pg'
 
 class CheckPostgresConnections < Sensu::Plugin::Check::CLI
+  option :connection_string,
+         description: 'A postgres connection string to use, overrides any other parameters',
+         short: '-c CONNECTION_STRING',
+         long:  '--connection CONNECTION_STRING'
+
   option :user,
          description: 'Postgres User',
          short: '-u USER',
@@ -87,7 +92,12 @@ class CheckPostgresConnections < Sensu::Plugin::Check::CLI
 
   def run
     begin
-      con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+      if config[:connection_string]
+        con = PG::Connection.new(config[:connection_string])
+      else
+        con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
+      end
+
       max_conns = con.exec('SHOW max_connections').getvalue(0, 0).to_i
       current_conns = con.exec('SELECT count(*) from pg_stat_activity').getvalue(0, 0).to_i
     rescue PG::Error => e
