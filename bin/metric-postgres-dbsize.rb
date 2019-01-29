@@ -28,6 +28,7 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'sensu-plugin/metric/cli'
 require 'pg'
 require 'socket'
@@ -37,6 +38,12 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
          description: 'A postgres connection string to use, overrides any other parameters',
          short: '-c CONNECTION_STRING',
          long:  '--connection CONNECTION_STRING'
+
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
 
   option :user,
          description: 'Postgres User',
@@ -51,29 +58,34 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :hostname,
          description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
+         long: '--hostname HOST'
 
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
 
-  option :db,
+  option :database,
          description: 'Database name',
          short: '-d DB',
-         long: '--db DB',
-         default: 'postgres'
+         long: '--db DB'
 
   option :scheme,
          description: 'Metric naming scheme, text to prepend to $queue_name.$metric',
          long: '--scheme SCHEME',
          default: "#{Socket.gethostname}.postgresql"
 
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
+
   def run
     timestamp = Time.now.to_i
-
+    pgpass
     if config[:connection_string]
       con = PG::Connection.new(config[:connection_string])
     else
@@ -81,12 +93,12 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
     end
 
     request = [
-      "select pg_database_size('#{config[:db]}')"
+      "select pg_database_size('#{config[:database]}')"
     ]
 
     con.exec(request.join(' ')) do |result|
       result.each do |row|
-        output "#{config[:scheme]}.size.#{config[:db]}", row['pg_database_size'], timestamp
+        output "#{config[:scheme]}.size.#{config[:database]}", row['pg_database_size'], timestamp
       end
     end
 

@@ -29,6 +29,7 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'sensu-plugin/metric/cli'
 require 'pg'
 require 'socket'
@@ -38,6 +39,12 @@ class PostgresStatsIOMetrics < Sensu::Plugin::Metric::CLI::Graphite
          description: 'A postgres connection string to use, overrides any other parameters',
          short: '-c CONNECTION_STRING',
          long:  '--connection CONNECTION_STRING'
+
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
 
   option :user,
          description: 'Postgres User',
@@ -52,20 +59,17 @@ class PostgresStatsIOMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :hostname,
          description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
+         long: '--hostname HOST'
 
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
 
-  option :db,
+  option :database,
          description: 'Database name',
          short: '-d DB',
-         long: '--db DB',
-         default: 'postgres'
+         long: '--db DB'
 
   option :scope,
          description: 'Scope, see http://www.postgresql.org/docs/9.2/static/monitoring-stats.html',
@@ -78,8 +82,17 @@ class PostgresStatsIOMetrics < Sensu::Plugin::Metric::CLI::Graphite
          long: '--scheme SCHEME',
          default: "#{Socket.gethostname}.postgresql"
 
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
+
   def run
     timestamp = Time.now.to_i
+    pgpass
 
     if config[:connection_string]
       con = PG::Connection.new(config[:connection_string])
@@ -96,14 +109,14 @@ class PostgresStatsIOMetrics < Sensu::Plugin::Metric::CLI::Graphite
     ]
     con.exec(request.join(' ')) do |result|
       result.each do |row|
-        output "#{config[:scheme]}.statsio.#{config[:db]}.heap_blks_read", row['heap_blks_read'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.heap_blks_hit", row['heap_blks_hit'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.idx_blks_read", row['idx_blks_read'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.idx_blks_hit", row['idx_blks_hit'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.toast_blks_read", row['toast_blks_read'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.toast_blks_hit", row['toast_blks_hit'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.tidx_blks_read", row['tidx_blks_read'], timestamp
-        output "#{config[:scheme]}.statsio.#{config[:db]}.tidx_blks_hit", row['tidx_blks_hit'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.heap_blks_read", row['heap_blks_read'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.heap_blks_hit", row['heap_blks_hit'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.idx_blks_read", row['idx_blks_read'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.idx_blks_hit", row['idx_blks_hit'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.toast_blks_read", row['toast_blks_read'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.toast_blks_hit", row['toast_blks_hit'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.tidx_blks_read", row['tidx_blks_read'], timestamp
+        output "#{config[:scheme]}.statsio.#{config[:database]}.tidx_blks_hit", row['tidx_blks_hit'], timestamp
       end
     end
 

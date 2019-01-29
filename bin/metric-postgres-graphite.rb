@@ -26,11 +26,18 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'pg'
 require 'sensu-plugin/metric/cli'
 require 'socket'
 
 class CheckpostgresReplicationStatus < Sensu::Plugin::Metric::CLI::Graphite
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
+
   option :master_host,
          short: '-m',
          long: '--master=HOST',
@@ -45,15 +52,14 @@ class CheckpostgresReplicationStatus < Sensu::Plugin::Metric::CLI::Graphite
   option :database,
          short: '-d',
          long: '--database=NAME',
-         description: 'Database NAME',
-         default: 'postgres'
+         description: 'Database NAME'
 
   option :user,
          short: '-u',
          long: '--username=VALUE',
          description: 'Database username'
 
-  option :pass,
+  option :password,
          short: '-p',
          long: '--password=VALUE',
          description: 'Database password'
@@ -67,19 +73,25 @@ class CheckpostgresReplicationStatus < Sensu::Plugin::Metric::CLI::Graphite
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
+
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
 
   def run
-    @dbmaster = config[:master_host]
-    @dbslave = config[:slave_host]
-    @dbport = config[:port]
-    @dbname = config[:database]
-    @dbusername = config[:user]
-    @password = config[:pass]
-
     # Establishing connections to the master
-    conn_master = PGconn.connect(@dbmaster, @dbport, '', '', @dbname, @dbusername, @password)
+    pgpass
+    conn_master = PG.connect(host: config[:master_host],
+                             dbname: config[:database],
+                             user: config[:user],
+                             password: config[:password],
+                             port: config[:port],
+                             connect_timeout: config[:timeout])
     res1 = conn_master.exec('SELECT pg_current_xlog_location()').getvalue(0, 0)
     m_segbytes = conn_master.exec('SHOW wal_segment_size').getvalue(0, 0).sub(/\D+/, '').to_i << 20
     conn_master.close
@@ -91,7 +103,12 @@ class CheckpostgresReplicationStatus < Sensu::Plugin::Metric::CLI::Graphite
     end
 
     # Establishing connections to the slave
-    conn_slave = PGconn.connect(@dbslave, @dbport, '', '', @dbname, @dbusername, @password)
+    conn_slave = PG.connect(host: config[:slave_host],
+                            dbname: config[:database],
+                            user: config[:user],
+                            password: config[:password],
+                            port: config[:port],
+                            connect_timeout: config[:timeout])
     res = conn_slave.exec('SELECT pg_last_xlog_receive_location()').getvalue(0, 0)
     conn_slave.close
 

@@ -17,7 +17,7 @@
 #   gem: pg
 #
 # USAGE:
-#   ./check-postgres-replication.rb -m master_host -s slave_host -d db -u db_user -p db_pass -w warn_threshold -c crit_threshold
+#   ./check-postgres-replication.rb -m master_host -s slave_host -P port -d db -u db_user -p db_pass -w warn_threshold -c crit_threshold
 #
 # NOTES:
 #
@@ -26,10 +26,18 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
+require 'sensu-plugins-postgres/pgutil'
 require 'sensu-plugin/check/cli'
 require 'pg'
 
 class CheckPostgresReplicationStatus < Sensu::Plugin::Check::CLI
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
+
   option(:master_host,
          short: '-m',
          long: '--master-host=HOST',
@@ -40,6 +48,11 @@ class CheckPostgresReplicationStatus < Sensu::Plugin::Check::CLI
          long: '--slave-host=HOST',
          description: 'PostgreSQL slave HOST',
          default: 'localhost')
+
+  option(:port,
+         short: '-P',
+         long: '--port=PORT',
+         description: 'PostgreSQL port')
 
   option(:database,
          short: '-d',
@@ -78,23 +91,33 @@ class CheckPostgresReplicationStatus < Sensu::Plugin::Check::CLI
          # #YELLOW
          proc: lambda { |s| s.to_i }) # rubocop:disable Lambda
 
-  def compute_lag(master, slave, m_segbytes)
-    m_segment, m_offset = master.split('/')
-    s_segment, s_offset = slave.split('/')
-    ((m_segment.hex - s_segment.hex) * m_segbytes) + (m_offset.hex - s_offset.hex)
-  end
+  option(:timeout,
+         short: '-T',
+         long: '--timeout',
+         default: nil,
+         description: 'Connection timeout (seconds)')
+
+  include Pgpass
+  include PgUtil
 
   def run
     ssl_mode = config[:ssl] ? 'require' : 'prefer'
 
     # Establishing connection to the master
+    pgpass
     conn_master = PG.connect(host: config[:master_host],
                              dbname: config[:database],
                              user: config[:user],
                              password: config[:password],
-                             sslmode: ssl_mode)
+                             port: config[:port],
+                             sslmode: ssl_mode,
+                             connect_timeout: config[:timeout])
 
-    master = conn_master.exec('SELECT pg_current_xlog_location()').getvalue(0, 0)
+    master = if check_vsn_newer_than_postgres9(conn_master)
+               conn_master.exec('SELECT pg_current_xlog_location()').getvalue(0, 0)
+             else
+               conn_master.exec('SELECT pg_current_wal_lsn()').getvalue(0, 0)
+             end
     m_segbytes = conn_master.exec('SHOW wal_segment_size').getvalue(0, 0).sub(/\D+/, '').to_i << 20
     conn_master.close
 
@@ -103,9 +126,15 @@ class CheckPostgresReplicationStatus < Sensu::Plugin::Check::CLI
                             dbname: config[:database],
                             user: config[:user],
                             password: config[:password],
-                            sslmode: ssl_mode)
+                            port: config[:port],
+                            sslmode: ssl_mode,
+                            connect_timeout: config[:timeout])
 
-    slave = conn_slave.exec('SELECT pg_last_xlog_receive_location()').getvalue(0, 0)
+    slave = if check_vsn_newer_than_postgres9(conn_slave)
+              conn_slave.exec('SELECT pg_last_xlog_receive_location()').getvalue(0, 0)
+            else
+              conn_slave.exec('SELECT pg_last_wal_replay_lsn()').getvalue(0, 0)
+            end
     conn_slave.close
 
     # Computing lag
@@ -114,10 +143,9 @@ class CheckPostgresReplicationStatus < Sensu::Plugin::Check::CLI
 
     message = "replication delayed by #{lag_in_mb}MB :: master:#{master} slave:#{slave} m_segbytes:#{m_segbytes}"
 
-    case
-    when lag_in_mb >= config[:crit]
+    if lag_in_mb >= config[:crit]
       critical message
-    when lag_in_mb >= config[:warn]
+    elsif lag_in_mb >= config[:warn]
       warning message
     else
       ok message

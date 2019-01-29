@@ -32,6 +32,7 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'sensu-plugin/check/cli'
 require 'pg'
 
@@ -40,6 +41,12 @@ class CheckPostgresConnections < Sensu::Plugin::Check::CLI
          description: 'A postgres connection string to use, overrides any other parameters',
          short: '-c CONNECTION_STRING',
          long:  '--connection CONNECTION_STRING'
+
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
 
   option :user,
          description: 'Postgres User',
@@ -54,25 +61,22 @@ class CheckPostgresConnections < Sensu::Plugin::Check::CLI
   option :hostname,
          description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
+         long: '--hostname HOST'
 
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
 
-  option :db,
+  option :database,
          description: 'Database name',
          short: '-d DB',
-         long: '--db DB',
-         default: 'postgres'
+         long: '--db DB'
 
   option :warning,
          description: 'Warning threshold number or % of connections. (default: 200 connections)',
          short: '-w WARNING',
-         long: '--warning CRITICAL',
+         long: '--warning WARNING',
          default: 200,
          proc: proc(&:to_i)
 
@@ -90,8 +94,17 @@ class CheckPostgresConnections < Sensu::Plugin::Check::CLI
          boolean: true,
          default: false
 
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
+
   def run
     begin
+      pgpass
       if config[:connection_string]
         con = PG::Connection.new(config[:connection_string])
       else
@@ -99,6 +112,8 @@ class CheckPostgresConnections < Sensu::Plugin::Check::CLI
       end
 
       max_conns = con.exec('SHOW max_connections').getvalue(0, 0).to_i
+      superuser_conns = con.exec('SHOW superuser_reserved_connections').getvalue(0, 0).to_i
+      available_conns = max_conns - superuser_conns
       current_conns = con.exec('SELECT count(*) from pg_stat_activity').getvalue(0, 0).to_i
     rescue PG::Error => e
       unknown "Unable to query PostgreSQL: #{e.message}"
@@ -107,22 +122,22 @@ class CheckPostgresConnections < Sensu::Plugin::Check::CLI
     percent = (current_conns.to_f / max_conns.to_f * 100).to_i
 
     if config[:use_percentage]
-      message = "PostgreSQL connections at #{percent}%, #{current_conns} out of #{max_conns} connections"
-      if percent >= config[:warning]
-        warning message
-      elsif percent >= config[:critical]
+      message = "PostgreSQL connections at #{percent}%, #{current_conns} out of #{available_conns} connections"
+      if percent >= config[:critical]
         critical message
+      elsif percent >= config[:warning]
+        warning message
       else
-        ok "PostgreSQL connections under threshold: #{percent}%, #{current_conns} out of #{max_conns} connections"
+        ok "PostgreSQL connections under threshold: #{percent}%, #{current_conns} out of #{available_conns} connections"
       end
     else
-      message = "PostgreSQL connections at #{current_conns} out of #{max_conns} connections"
-      if current_conns >= config[:warning]
-        warning message
-      elsif current_conns >= config[:critical]
+      message = "PostgreSQL connections at #{current_conns} out of #{available_conns} connections"
+      if current_conns >= config[:critical]
         critical message
+      elsif current_conns >= config[:warning]
+        warning message
       else
-        ok "PostgreSQL connections under threshold: #{current_conns} out of #{max_conns} connections"
+        ok "PostgreSQL connections under threshold: #{current_conns} out of #{available_conns} connections"
       end
     end
   end

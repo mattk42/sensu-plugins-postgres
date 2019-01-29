@@ -28,6 +28,7 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'sensu-plugin/metric/cli'
 require 'pg'
 require 'socket'
@@ -37,6 +38,12 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
          description: 'A postgres connection string to use, overrides any other parameters',
          short: '-c CONNECTION_STRING',
          long:  '--connection CONNECTION_STRING'
+
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: "#{ENV['HOME']}/.pgpass"
 
   option :user,
          description: 'Postgres User',
@@ -51,38 +58,53 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :hostname,
          description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
+         long: '--hostname HOST'
 
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
 
-  option :db,
+  option :database,
          description: 'Database name',
          short: '-d DB',
-         long: '--db DB',
-         default: 'postgres'
+         long: '--db DB'
 
   option :scheme,
          description: 'Metric naming scheme, text to prepend to $queue_name.$metric',
          long: '--scheme SCHEME',
          default: "#{Socket.gethostname}.postgresql"
 
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
+
   def run
     timestamp = Time.now.to_i
-
+    pgpass
     if config[:connection_string]
       con = PG::Connection.new(config[:connection_string])
     else
       con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db], config[:user], config[:password])
     end
 
+
     request = [
-      'select count(*), waiting from pg_stat_activity',
-      "where datname = '#{config[:db]}' group by waiting"
+      "select case when count(*) = 1 then 'waiting' else",
+      "'case when wait_event_type is null then false else true end' end as wait_col",
+      'from information_schema.columns',
+      "where table_name = 'pg_stat_activity' and table_schema = 'pg_catalog'",
+      "and column_name = 'waiting'"
+    ]
+    wait_col = con.exec(request.join(' ')).first['wait_col']
+
+    request = [
+      "select count(*), #{wait_col} as waiting from pg_stat_activity",
+      "where datname = '#{config[:database]}' group by #{wait_col}"
     ]
 
     metrics = {
@@ -103,7 +125,7 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
     metrics[:total] = (metrics[:waiting].to_i + metrics[:active].to_i)
 
     metrics.each do |metric, value|
-      output "#{config[:scheme]}.connections.#{config[:db]}.#{metric}", value, timestamp
+      output "#{config[:scheme]}.connections.#{config[:database]}.#{metric}", value, timestamp
     end
 
     ok

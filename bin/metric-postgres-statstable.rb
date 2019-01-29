@@ -29,6 +29,7 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'sensu-plugin/metric/cli'
 require 'pg'
 require 'socket'
@@ -38,6 +39,12 @@ class PostgresStatsTableMetrics < Sensu::Plugin::Metric::CLI::Graphite
          description: 'A postgres connection string to use, overrides any other parameters',
          short: '-c CONNECTION_STRING',
          long:  '--connection CONNECTION_STRING'
+
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
 
   option :user,
          description: 'Postgres User',
@@ -52,20 +59,17 @@ class PostgresStatsTableMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :hostname,
          description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
+         long: '--hostname HOST'
 
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
 
-  option :db,
+  option :database,
          description: 'Database name',
          short: '-d DB',
-         long: '--db DB',
-         default: 'postgres'
+         long: '--db DB'
 
   option :scope,
          description: 'Scope, see http://www.postgresql.org/docs/9.2/static/monitoring-stats.html',
@@ -78,8 +82,17 @@ class PostgresStatsTableMetrics < Sensu::Plugin::Metric::CLI::Graphite
          long: '--scheme SCHEME',
          default: "#{Socket.gethostname}.postgresql"
 
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
+
   def run
     timestamp = Time.now.to_i
+    pgpass
 
     if config[:connection_string]
       con = PG::Connection.new(config[:connection_string])
@@ -96,16 +109,16 @@ class PostgresStatsTableMetrics < Sensu::Plugin::Metric::CLI::Graphite
     ]
     con.exec(request.join(' ')) do |result|
       result.each do |row|
-        output "#{config[:scheme]}.statstable.#{config[:db]}.seq_scan", row['seq_scan'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.seq_tup_read", row['seq_tup_read'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.idx_scan", row['idx_scan'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.idx_tup_fetch", row['idx_tup_fetch'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.n_tup_ins", row['n_tup_ins'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.n_tup_upd", row['n_tup_upd'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.n_tup_del", row['n_tup_del'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.n_tup_hot_upd", row['n_tup_hot_upd'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.n_live_tup", row['n_live_tup'], timestamp
-        output "#{config[:scheme]}.statstable.#{config[:db]}.n_dead_tup", row['n_dead_tup'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.seq_scan", row['seq_scan'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.seq_tup_read", row['seq_tup_read'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.idx_scan", row['idx_scan'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.idx_tup_fetch", row['idx_tup_fetch'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.n_tup_ins", row['n_tup_ins'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.n_tup_upd", row['n_tup_upd'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.n_tup_del", row['n_tup_del'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.n_tup_hot_upd", row['n_tup_hot_upd'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.n_live_tup", row['n_live_tup'], timestamp
+        output "#{config[:scheme]}.statstable.#{config[:database]}.n_dead_tup", row['n_dead_tup'], timestamp
       end
     end
 

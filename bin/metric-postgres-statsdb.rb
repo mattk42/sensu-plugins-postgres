@@ -29,6 +29,7 @@
 #   for details.
 #
 
+require 'sensu-plugins-postgres/pgpass'
 require 'sensu-plugin/metric/cli'
 require 'pg'
 require 'socket'
@@ -38,6 +39,12 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
          description: 'A postgres connection string to use, overrides any other parameters',
          short: '-c CONNECTION_STRING',
          long:  '--connection CONNECTION_STRING'
+
+  option :pgpass,
+         description: 'Pgpass file',
+         short: '-f FILE',
+         long: '--pgpass',
+         default: ENV['PGPASSFILE'] || "#{ENV['HOME']}/.pgpass"
 
   option :user,
          description: 'Postgres User',
@@ -52,28 +59,42 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
   option :hostname,
          description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
+         long: '--hostname HOST'
 
   option :port,
          description: 'Database port',
          short: '-P PORT',
-         long: '--port PORT',
-         default: 5432
+         long: '--port PORT'
 
-  option :db,
-         description: 'Database name',
+  option :database,
+         description: 'Database to connect on',
          short: '-d DB',
          long: '--db DB',
          default: 'postgres'
+
+  option :all_databases,
+         description: 'Get stats for all available databases',
+         short: '-a',
+         long: '--all-databases',
+         boolean: true,
+         default: false
 
   option :scheme,
          description: 'Metric naming scheme, text to prepend to $queue_name.$metric',
          long: '--scheme SCHEME',
          default: "#{Socket.gethostname}.postgresql"
 
+  option :timeout,
+         description: 'Connection timeout (seconds)',
+         short: '-T TIMEOUT',
+         long: '--timeout TIMEOUT',
+         default: nil
+
+  include Pgpass
+
   def run
     timestamp = Time.now.to_i
+    pgpass
 
     if config[:connection_string]
       con = PG::Connection.new(config[:connection_string])
@@ -81,23 +102,22 @@ class PostgresStatsDBMetrics < Sensu::Plugin::Metric::CLI::Graphite
       con = PG::Connection.new(config[:hostname], config[:port], nil, nil, config[:db] , config[:user], config[:password])
     end
 
-    request = [
-      'select xact_commit, xact_rollback,',
-      'blks_read, blks_hit,',
-      'tup_returned, tup_fetched, tup_inserted, tup_updated, tup_deleted',
-      "from pg_stat_database where datname='#{config[:db]}'"
-    ]
-    con.exec(request.join(' ')) do |result|
+    query = 'SELECT * FROM pg_stat_database'
+    params = []
+    unless config[:all_databases]
+      query += ' WHERE datname = $1'
+      params.push config[:database]
+    end
+
+    con.exec_params(query, params) do |result|
       result.each do |row|
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.xact_commit", row['xact_commit'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.xact_rollback", row['xact_rollback'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.blks_read", row['blks_read'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.blks_hit", row['blks_hit'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.tup_returned", row['tup_returned'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.tup_fetched", row['tup_fetched'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.tup_inserted", row['tup_inserted'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.tup_updated", row['tup_updated'], timestamp
-        output "#{config[:scheme]}.statsdb.#{config[:db]}.tup_deleted", row['tup_deleted'], timestamp
+        database = row['datname']
+
+        row.each do |key, value|
+          next if %w[datid datname stats_reset].include?(key)
+
+          output "#{config[:scheme]}.statsdb.#{database}.#{key}", value.to_s, timestamp
+        end
       end
     end
 

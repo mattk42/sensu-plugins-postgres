@@ -2,14 +2,9 @@ lib = File.expand_path('../lib', __FILE__)
 $LOAD_PATH.unshift(lib) unless $LOAD_PATH.include?(lib)
 
 require 'date'
+require_relative 'lib/sensu-plugins-postgres'
 
-if RUBY_VERSION < '2.0.0'
-  require 'sensu-plugins-postgres'
-else
-  require_relative 'lib/sensu-plugins-postgres'
-end
-
-Gem::Specification.new do |s|
+Gem::Specification.new do |s| # rubocop:disable Metrics/BlockLength
   s.authors                = ['Sensu-Plugins and contributors']
 
   s.date                   = Date.today.to_s
@@ -21,36 +16,42 @@ Gem::Specification.new do |s|
                               more.'
   s.email                  = '<sensu-users@googlegroups.com>'
   s.executables            = Dir.glob('bin/**/*.rb').map { |file| File.basename(file) }
-  s.files                  = Dir.glob('{bin,lib}/**/*') + %w(LICENSE README.md CHANGELOG.md)
+  s.files                  = Dir.glob('{bin,lib}/**/*') + %w[LICENSE README.md CHANGELOG.md]
   s.homepage               = 'https://github.com/sensu-plugins/sensu-plugins-postgres'
   s.license                = 'MIT'
-  s.metadata               = { 'maintainer'         => '@tas50',
+  s.metadata               = { 'maintainer'         => 'sensu-plugin',
                                'development_status' => 'active',
                                'production_status'  => 'unstable - testing recommended',
                                'release_draft'      => 'false',
-                               'release_prerelease' => 'false'
-  }
+                               'release_prerelease' => 'false' }
   s.name                   = 'sensu-plugins-postgres'
   s.platform               = Gem::Platform::RUBY
   s.post_install_message   = 'You can use the embedded Ruby by setting EMBEDDED_RUBY=true in /etc/default/sensu'
   s.require_paths          = ['lib']
-  s.required_ruby_version  = '>= 1.9.3'
+  s.required_ruby_version  = '>= 2.3.0'
 
   s.summary                = 'Sensu plugins for postgres'
   s.test_files             = s.files.grep(%r{^(test|spec|features)/})
   s.version                = SensuPluginsPostgres::Version::VER_STRING
 
   s.add_runtime_dependency 'sensu-plugin', '~> 1.2'
-  s.add_runtime_dependency 'pg',           '0.18.3'
+
   s.add_runtime_dependency 'dentaku',      '2.0.4'
+  s.add_runtime_dependency 'pg',           '0.18.3'
 
   s.add_development_dependency 'bundler',                   '~> 1.7'
-  s.add_development_dependency 'codeclimate-test-reporter', '~> 0.4'
-  s.add_development_dependency 'github-markup',             '~> 1.3'
+  s.add_development_dependency 'codeclimate-test-reporter', '~> 1.0'
+  s.add_development_dependency 'github-markup',             '~> 3.0'
+  s.add_development_dependency 'kitchen-docker',            '~> 2.6'
+  s.add_development_dependency 'kitchen-localhost',         '~> 0.3'
+  # locked to keep ruby 2.1 support, this is pulled in by test-kitchen
+  s.add_development_dependency 'mixlib-shellout',           ['< 2.3.0', '~> 2.2']
   s.add_development_dependency 'pry',                       '~> 0.10'
-  s.add_development_dependency 'rake',                      '~> 10.0'
+  s.add_development_dependency 'rake',                      '~> 12.3'
   s.add_development_dependency 'redcarpet',                 '~> 3.2'
   s.add_development_dependency 'rspec',                     '~> 3.1'
-  s.add_development_dependency 'rubocop',                   '0.34.2'
-  s.add_development_dependency 'yard',                      '~> 0.8'
+  s.add_development_dependency 'rubocop',                   '~> 0.49.0'
+  s.add_development_dependency 'serverspec',                '~> 2.36.1'
+  s.add_development_dependency 'test-kitchen',              '~> 1.16.0'
+  s.add_development_dependency 'yard',                      '~> 0.9.11'
 end
